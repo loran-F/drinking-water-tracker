@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日喝水打卡</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+        }
+
+        .progress {
+            width: 200px;
+            background-color: #e0e0e0;
+            margin: 5px 0;
+        }
+
+        .progress-bar {
+            height: 20px;
+            background-color: blue;
+        }
+
+        .completed {
+            background-color: green;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .floating-message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        #record-table-container {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #total-today {
+            color: #999;
+        }
+
+        #total-today.reached {
+            color: green;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>嘎嘎喝水</h1>
+    <h2>今日喝水总和: <span id="total-today">0/1050</span></h2>
+    <div>
+        <button onclick="addRecord(50)">50ml</button>
+        <button onclick="addRecord(100)">100ml</button>
+        <button onclick="addRecord(150)">150ml</button>
+        <button onclick="addRecord(200)">200ml</button>
+    </div>
+    <div id="floating-message" class="floating-message">打卡成功</div>
+    <h2>打卡记录</h2>
+    <div id="record-table-container">
+        <table id="record-table">
+            <thead>
+                <tr>
+                    <th>时间</th>
+                    <th>容量(ml)</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <h2>时间段进度</h2>
+    <div id="time-periods"></div>
+    <h2>周报报表</h2>
+    <table id="weekly-report">
+        <thead>
+            <tr>
+                <th>日期</th>
+                <th>目标(ml)</th>
+                <th>完成量(ml)</th>
+                <th>完成度</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <script>
+        // 初始化数据
+        let records = JSON.parse(localStorage.getItem('drinkingRecords')) || [];
+        let weeklyReport = JSON.parse(localStorage.getItem('weeklyReport')) || {};
+
+        // 时间段设置
+        const timePeriods = [
+            { start: 8, end: 10, target: 150, completed: 0, reminded: false },
+            { start: 10, end: 12, target: 150, completed: 0, reminded: false },
+            { start: 12, end: 14, target: 150, completed: 0, reminded: false },
+            { start: 14, end: 16, target: 150, completed: 0, reminded: false },
+            { start: 16, end: 18, target: 150, completed: 0, reminded: false },
+            { start: 18, end: 20, target: 150, completed: 0, reminded: false },
+            { start: 20, end: 22, target: 150, completed: 0, reminded: false }
+        ];
+
+        // 获取当前日期
+        const today = new Date();
+        const todayDate = `${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}`;
+
+        // 显示打卡记录
+        function displayRecords() {
+            const tableBody = document.querySelector('#record-table tbody');
+            tableBody.innerHTML = '';
+            const latestRecords = records.slice(-5); // 取最新的 5 条记录
+            latestRecords.forEach((record, index) => {
+                const row = document.createElement('tr');
+                const timeCell = document.createElement('td');
+                const timeInput = document.createElement('input');
+                timeInput.type = 'text';
+                timeInput.value = record.time;
+                timeInput.addEventListener('change', () => {
+                    const originalIndex = records.findIndex(r => r.time === record.time && r.volume === record.volume);
+                    records[originalIndex].time = timeInput.value;
+                    saveData();
+                    displayRecords();
+                    updateProgress();
+                    updateWeeklyReport();
+                });
+                timeCell.appendChild(timeInput);
+
+                const volumeCell = document.createElement('td');
+                const volumeInput = document.createElement('input');
+                volumeInput.type = 'number';
+                volumeInput.value = record.volume;
+                volumeInput.addEventListener('change', () => {
+                    const originalIndex = records.findIndex(r => r.time === record.time && r.volume === record.volume);
+                    records[originalIndex].volume = parseInt(volumeInput.value);
+                    saveData();
+                    displayRecords();
+                    updateProgress();
+                    updateWeeklyReport();
+                });
+                volumeCell.appendChild(volumeInput);
+
+                const actionCell = document.createElement('td');
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = '删除';
+                deleteButton.addEventListener('click', () => {
+                    const originalIndex = records.findIndex(r => r.time === record.time && r.volume === record.volume);
+                    records.splice(originalIndex, 1);
+                    saveData();
+                    displayRecords();
+                    updateProgress();
+                    updateWeeklyReport();
+                });
+                actionCell.appendChild(deleteButton);
+
+                row.appendChild(timeCell);
+                row.appendChild(volumeCell);
+                row.appendChild(actionCell);
+                tableBody.appendChild(row);
+            });
+        }
+
+        // 显示时间段进度
+        function displayTimePeriods() {
+            const timePeriodsDiv = document.getElementById('time-periods');
+            timePeriodsDiv.innerHTML = '';
+            timePeriods.forEach((period, index) => {
+                const periodDiv = document.createElement('div');
+                periodDiv.textContent = `${period.start}:00 - ${period.end}:00`;
+                const progressDiv = document.createElement('div');
+                progressDiv.classList.add('progress');
+                const progressBar = document.createElement('div');
+                progressBar.classList.add('progress-bar');
+                const percentage = (period.completed / period.target) * 100;
+                progressBar.style.width = `${Math.min(percentage, 100)}%`;
+                if (percentage >= 100) {
+                    progressBar.classList.add('completed');
+                }
+                progressDiv.appendChild(progressBar);
+                periodDiv.appendChild(progressDiv);
+                timePeriodsDiv.appendChild(periodDiv);
+
+                // 时间段开始提醒
+                const now = new Date();
+                const currentHour = now.getHours();
+                if (currentHour === period.start && !period.reminded) {
+                    alert(`现在是 ${period.start}:00 - ${period.end}:00 时间段，记得喝水哦！`);
+                    period.reminded = true;
+                }
+            });
+        }
+
+        // 更新进度
+        function updateProgress() {
+            timePeriods.forEach(period => {
+                period.completed = 0;
+            });
+            records.forEach(record => {
+                const [date, time] = record.time.split(' ');
+                const [hour, minute] = time.split(':').map(Number);
+                if (date === todayDate) {
+                    timePeriods.forEach(period => {
+                        if (hour >= period.start && hour < period.end) {
+                            period.completed += record.volume;
+                        }
+                    });
+                }
+            });
+            displayTimePeriods();
+            updateTotalToday();
+        }
+
+        // 更新今日喝水总和
+        function updateTotalToday() {
+            const total = records.filter(record => {
+                const [date, time] = record.time.split(' ');
+                return date === todayDate;
+            }).reduce((sum, record) => sum + record.volume, 0);
+            const totalTarget = timePeriods.reduce((sum, period) => sum + period.target, 0);
+            const totalTodayElement = document.getElementById('total-today');
+            totalTodayElement.textContent = `${total}/${totalTarget}`;
+            if (total >= totalTarget) {
+                totalTodayElement.classList.add('reached');
+            } else {
+                totalTodayElement.classList.remove('reached');
+            }
+        }
+
+        // 更新周报报表
+        function updateWeeklyReport() {
+            const todayTotal = records.filter(record => {
+                const [date, time] = record.time.split(' ');
+                return date === todayDate;
+            }).reduce((sum, record) => sum + record.volume, 0);
+            const weeklyTarget = timePeriods.reduce((sum, period) => sum + period.target, 0);
+            weeklyReport[todayDate] = { target: weeklyTarget, completed: todayTotal };
+
+            const reportTable = document.querySelector('#weekly-report tbody');
+            reportTable.innerHTML = '';
+            Object.keys(weeklyReport).forEach(date => {
+                const row = document.createElement('tr');
+                const dateCell = document.createElement('td');
+                dateCell.textContent = date;
+                const targetCell = document.createElement('td');
+                targetCell.textContent = weeklyReport[date].target;
+                const completedCell = document.createElement('td');
+                completedCell.textContent = weeklyReport[date].completed;
+                const percentageCell = document.createElement('td');
+                const percentage = (weeklyReport[date].completed / weeklyReport[date].target) * 100;
+                percentageCell.textContent = `${Math.min(percentage, 100).toFixed(2)}%`;
+
+                row.appendChild(dateCell);
+                row.appendChild(targetCell);
+                row.appendChild(completedCell);
+                row.appendChild(percentageCell);
+                reportTable.appendChild(row);
+            });
+
+            saveData();
+        }
+
+        // 添加打卡记录
+        function addRecord(volume) {
+            const now = new Date();
+            const time = `${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            records.push({ time, volume });
+            saveData();
+            displayRecords();
+            updateProgress();
+            updateWeeklyReport();
+            showFloatingMessage();
+        }
+
+        // 显示飘字消息
+        function showFloatingMessage() {
+            const floatingMessage = document.getElementById('floating-message');
+            floatingMessage.style.opacity = 1;
+            setTimeout(() => {
+                floatingMessage.style.opacity = 0;
+            }, 2000);
+        }
+
+        // 保存数据到 localStorage
+        function saveData() {
+            localStorage.setItem('drinkingRecords', JSON.stringify(records));
+            localStorage.setItem('weeklyReport', JSON.stringify(weeklyReport));
+        }
+
+        // 提醒功能
+        function setupReminders() {
+            const now = new Date();
+            timePeriods.forEach(period => {
+                const reminderTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), period.start, 0, 0);
+                if (reminderTime < now) {
+                    reminderTime.setDate(reminderTime.getDate() + 1);
+                }
+                const timeUntilReminder = reminderTime - now;
+                setTimeout(() => {
+                    alert(`现在是 ${period.start}:00 - ${period.end}:00 时间段，记得喝水哦！`);
+                    period.reminded = true;
+                }, timeUntilReminder);
+            });
+        }
+
+        // 初始化显示
+        displayRecords();
+        updateProgress();
+        updateWeeklyReport();
+        setupReminders();
+    </script>
+</body>
+
+</html>
